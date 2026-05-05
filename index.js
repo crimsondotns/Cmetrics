@@ -235,9 +235,11 @@ async function main() {
           logMsg = `[!] HTTP ${statusCode} | ⚠️ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}`;
         }
 
-        // ล้างบรรทัด Progress Bar ก่อนแล้วค่อยพิมพ์ Log
-        process.stdout.clearLine(0);
-        process.stdout.cursorTo(0);
+        // ล้างบรรทัด Progress Bar ก่อนแล้วค่อยพิมพ์ Log (รองรับกรณีรันบน GitHub Actions ที่ไม่ใช่ TTY)
+        if (process.stdout.isTTY) {
+          process.stdout.clearLine(0);
+          process.stdout.cursorTo(0);
+        }
         console.log(logMsg);
 
         // เขียนลงชีต โดยระบุ Error Code ชัดเจน
