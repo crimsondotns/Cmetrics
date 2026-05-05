@@ -7,9 +7,7 @@ const fs = require('fs');
 // ================= การตั้งค่าจาก Environment Variables =================
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const CMC_API_KEY = process.env.CMC_API_KEY;
-
-// รองรับทั้งไฟล์ credentials.json (local) และ JSON string จาก env (GitHub Actions)
-const KEY_FILE = process.env.GOOGLE_KEY_FILE || './credentials.json';
+const KEY_FILE = './credentials.json';
 // ===========================================
 
 // ตรวจสอบว่า Environment Variables ครบถ้วน
@@ -38,71 +36,27 @@ function formatThaiDateTime(timestamp) {
 }
 
 /**
- * สร้าง Google Auth client รองรับทั้ง keyFile (local) และ credentials JSON string (CI/CD)
+ * สร้าง Google Auth client รองรับทั้ง keyFile (local) และสร้างไฟล์จาก credentials JSON string (CI/CD)
  */
 async function createAuthClient() {
-  // กรณี Local: ใช้ keyFile (ให้ความสำคัญกว่า env var เพราะเชื่อถือได้กว่า)
-  if (fs.existsSync(KEY_FILE)) {
-    console.log(`🔑 ใช้ credentials จากไฟล์: ${KEY_FILE}`);
-    const auth = new google.auth.GoogleAuth({
-      keyFile: KEY_FILE,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-    return auth.getClient();
+  // หากมีการตั้งค่า GOOGLE_CREDENTIALS (เช่น ใน GitHub Actions) ให้เขียนเป็นไฟล์
+  if (process.env.GOOGLE_CREDENTIALS) {
+    fs.writeFileSync(KEY_FILE, process.env.GOOGLE_CREDENTIALS.trim());
+    console.log('📝 สร้างไฟล์ credentials.json ชั่วคราวจาก Environment Variables แล้ว');
   }
 
-  // กรณี GitHub Actions / CI: ใช้ GOOGLE_CREDENTIALS_JSON (JSON string)
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    const raw = process.env.GOOGLE_CREDENTIALS_JSON.trim();
-
-    // ตรวจสอบเบื้องต้นว่าเป็น JSON หรือไม่
-    if (!raw.startsWith('{')) {
-      console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่ใช่ JSON ที่ถูกต้อง!');
-      console.error(`   ค่าที่ได้รับขึ้นต้นด้วย: "${raw.substring(0, 50)}..."`);
-      console.error('');
-      console.error('💡 วิธีแก้:');
-      console.error('   1. เปิดไฟล์ credentials.json');
-      console.error('   2. Copy เนื้อหา JSON ทั้งหมด (ต้องขึ้นต้นด้วย { และจบด้วย })');
-      console.error('   3. วางลงใน GitHub Secrets → GOOGLE_CREDENTIALS_JSON');
-      process.exit(1);
-    }
-
-    try {
-      const credentials = JSON.parse(raw);
-
-      // ตรวจสอบว่ามี field สำคัญของ Service Account
-      if (!credentials.client_email || !credentials.private_key) {
-        console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่มี field ที่จำเป็น (client_email, private_key)');
-        console.error('   กรุณาตรวจสอบว่า copy JSON จากไฟล์ Service Account ที่ถูกต้อง');
-        process.exit(1);
-      }
-
-      console.log(`🔑 ใช้ credentials จาก env: ${credentials.client_email}`);
-      const auth = new google.auth.GoogleAuth({
-        credentials,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-      });
-      return auth.getClient();
-
-    } catch (parseError) {
-      console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่สามารถ parse เป็น JSON ได้!');
-      console.error(`   Error: ${parseError.message}`);
-      console.error(`   ค่าที่ได้รับขึ้นต้นด้วย: "${raw.substring(0, 80)}..."`);
-      console.error('');
-      console.error('💡 วิธีแก้:');
-      console.error('   • ตรวจสอบว่า copy JSON มาครบทั้งก้อน ไม่มีข้อความอื่นปนมา');
-      console.error('   • JSON ต้องขึ้นต้นด้วย { และจบด้วย }');
-      console.error('   • ลองรัน: cat credentials.json | pbcopy (Mac) เพื่อ copy ให้ถูกต้อง');
-      process.exit(1);
-    }
+  // ตรวจสอบว่ามีไฟล์หรือไม่
+  if (!fs.existsSync(KEY_FILE)) {
+    console.error(`❌ ไม่พบไฟล์ ${KEY_FILE} และไม่ได้กำหนด GOOGLE_CREDENTIALS`);
+    process.exit(1);
   }
 
-  // ไม่พบ credentials ทั้งสองแบบ
-  console.error(`❌ ไม่พบ credentials!`);
-  console.error(`   ต้องมีอย่างใดอย่างหนึ่ง:`);
-  console.error(`   • ไฟล์ ${KEY_FILE} (สำหรับรัน local)`);
-  console.error(`   • Environment Variable: GOOGLE_CREDENTIALS_JSON (สำหรับ CI/CD)`);
-  process.exit(1);
+  console.log(`🔑 ใช้ credentials จากไฟล์: ${KEY_FILE}`);
+  const auth = new google.auth.GoogleAuth({
+    keyFile: KEY_FILE,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  return auth.getClient();
 }
 
 // ================= กำหนด Header ให้ครอบคลุมทุก Timeframe =================
@@ -112,6 +66,8 @@ const HEADERS = [
   "web", "tw", "tg", "lg", "pubAt", "mcap", "ts", "liqUsd", "hld", "p", 
   "ph24h", "pl24h", "pt", "fpt", "fpct",
   
+  // sts (Stats) - 1 นาที
+  "sts_1m_vu", "sts_1m_txs", "sts_1m_nb", "sts_1m_ns", "sts_1m_bvu", "sts_1m_svu", "sts_1m_but", "sts_1m_sut", "sts_1m_pc", "sts_1m_ut",
   // sts (Stats) - 5 นาที
   "sts_5m_vu", "sts_5m_txs", "sts_5m_nb", "sts_5m_ns", "sts_5m_bvu", "sts_5m_svu", "sts_5m_but", "sts_5m_sut", "sts_5m_pc", "sts_5m_ut",
   // sts (Stats) - 1 ชั่วโมง
@@ -120,8 +76,10 @@ const HEADERS = [
   "sts_4h_vu", "sts_4h_txs", "sts_4h_nb", "sts_4h_ns", "sts_4h_bvu", "sts_4h_svu", "sts_4h_but", "sts_4h_sut", "sts_4h_pc", "sts_4h_ut",
   // sts (Stats) - 24 ชั่วโมง
   "sts_24h_vu", "sts_24h_txs", "sts_24h_nb", "sts_24h_ns", "sts_24h_bvu", "sts_24h_svu", "sts_24h_but", "sts_24h_sut", "sts_24h_pc", "sts_24h_ut",
-  // sts (Stats) - 1 เดือน
-  "sts_1m_vu", "sts_1m_txs", "sts_1m_nb", "sts_1m_ns", "sts_1m_bvu", "sts_1m_svu", "sts_1m_but", "sts_1m_sut", "sts_1m_pc", "sts_1m_ut",
+  // sts (Stats) - 7 วัน
+  "sts_7d_vu", "sts_7d_txs", "sts_7d_nb", "sts_7d_ns", "sts_7d_bvu", "sts_7d_svu", "sts_7d_but", "sts_7d_sut", "sts_7d_pc", "sts_7d_ut",
+  // sts (Stats) - 30 วัน
+  "sts_30d_vu", "sts_30d_txs", "sts_30d_nb", "sts_30d_ns", "sts_30d_bvu", "sts_30d_svu", "sts_30d_but", "sts_30d_sut", "sts_30d_pc", "sts_30d_ut",
   
   // pls (Pools) - ดึงข้อมูล Pool แรก
   "pls_addr", "pls_v24", "pls_pubAt", 
@@ -208,6 +166,8 @@ async function main() {
         const sts_1h  = stsArray.find(s => s.tp === '1h') || {};
         const sts_4h  = stsArray.find(s => s.tp === '4h') || {};
         const sts_24h = stsArray.find(s => s.tp === '24h') || {};
+        const sts_7d  = stsArray.find(s => s.tp === '7d') || {};
+        const sts_30d = stsArray.find(s => s.tp === '30d' || s.tp === '1M') || {};
         
         // === เลือก Pool ที่ตรงกับ pool address จากชีต subscription (คอลัมน์ I) ===
         const plsArray = Array.isArray(d.pls) ? d.pls : [];
@@ -228,7 +188,9 @@ async function main() {
           d.web || '', d.tw || '', d.tg || '', d.lg || '', d.pubAt || '', d.mcap || '', d.ts || '', d.liqUsd || '', d.hld || '', d.p || '', 
           d.ph24h || '', d.pl24h || '', d.pt || '', d.fpt || '', d.fpct || '',
 
-          // sts (Stats) - 5m (10 fields: vu, txs, nb, ns, bvu, svu, but, sut, pc, ut)
+          // sts (Stats) - 1m
+          sts_1m.vu || '', sts_1m.txs || '', sts_1m.nb || '', sts_1m.ns || '', sts_1m.bvu || '', sts_1m.svu || '', sts_1m.but || '', sts_1m.sut || '', sts_1m.pc || 0, sts_1m.ut || '',
+          // sts (Stats) - 5m
           sts_5m.vu || '', sts_5m.txs || '', sts_5m.nb || '', sts_5m.ns || '', sts_5m.bvu || '', sts_5m.svu || '', sts_5m.but || '', sts_5m.sut || '', sts_5m.pc || 0, sts_5m.ut || '',
           // sts (Stats) - 1h
           sts_1h.vu || '', sts_1h.txs || '', sts_1h.nb || '', sts_1h.ns || '', sts_1h.bvu || '', sts_1h.svu || '', sts_1h.but || '', sts_1h.sut || '', sts_1h.pc || 0, sts_1h.ut || '',
@@ -236,8 +198,10 @@ async function main() {
           sts_4h.vu || '', sts_4h.txs || '', sts_4h.nb || '', sts_4h.ns || '', sts_4h.bvu || '', sts_4h.svu || '', sts_4h.but || '', sts_4h.sut || '', sts_4h.pc || 0, sts_4h.ut || '',
           // sts (Stats) - 24h
           sts_24h.vu || '', sts_24h.txs || '', sts_24h.nb || '', sts_24h.ns || '', sts_24h.bvu || '', sts_24h.svu || '', sts_24h.but || '', sts_24h.sut || '', sts_24h.pc || 0, sts_24h.ut || '',
-          // sts (Stats) - 1m
-          sts_1m.vu || '', sts_1m.txs || '', sts_1m.nb || '', sts_1m.ns || '', sts_1m.bvu || '', sts_1m.svu || '', sts_1m.but || '', sts_1m.sut || '', sts_1m.pc || 0, sts_1m.ut || '',
+          // sts (Stats) - 7d
+          sts_7d.vu || '', sts_7d.txs || '', sts_7d.nb || '', sts_7d.ns || '', sts_7d.bvu || '', sts_7d.svu || '', sts_7d.but || '', sts_7d.sut || '', sts_7d.pc || 0, sts_7d.ut || '',
+          // sts (Stats) - 30d
+          sts_30d.vu || '', sts_30d.txs || '', sts_30d.nb || '', sts_30d.ns || '', sts_30d.bvu || '', sts_30d.svu || '', sts_30d.but || '', sts_30d.sut || '', sts_30d.pc || 0, sts_30d.ut || '',
 
           // pls (Pools)
           pls.addr || '', pls.v24 || '', pls.pubAt || '', 
@@ -271,7 +235,10 @@ async function main() {
           logMsg = `[!] HTTP ${statusCode} | ⚠️ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}`;
         }
 
-        progressBar.interrupt(logMsg);
+        // ล้างบรรทัด Progress Bar ก่อนแล้วค่อยพิมพ์ Log
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
+        console.log(logMsg);
 
         // เขียนลงชีต โดยระบุ Error Code ชัดเจน
         const errorRow = new Array(HEADERS.length).fill('');
