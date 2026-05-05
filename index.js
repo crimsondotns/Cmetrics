@@ -255,7 +255,30 @@ async function main() {
 
       } catch (error) {
         errorCount++;
-        // ข้ามสกุลที่ Error — ไม่เขียนลงชีต
+        
+        let errorText = 'ERROR';
+        let logMsg = '';
+        const symbolDisplay = rows[i][1] || 'UNKNOWN';
+        const statusCode = error.message;
+
+        if (statusCode === '429') {
+          errorText = 'RATE LIMIT';
+          logMsg = `\x1b[1;31m[!] HTTP 429 | ❌ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}\x1b[0m`;
+        } else if (statusCode === '404') {
+          errorText = 'NOT FOUND';
+          logMsg = `\x1b[33m[!] HTTP 404 | 🔍 ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}\x1b[0m`;
+        } else {
+          logMsg = `[!] HTTP ${statusCode} | ⚠️ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}`;
+        }
+
+        progressBar.interrupt(logMsg);
+
+        // เขียนลงชีต โดยระบุ Error Code ชัดเจน
+        const errorRow = new Array(HEADERS.length).fill('');
+        errorRow[0] = `Error HTTP ${statusCode}`;
+        errorRow[2] = address;
+        errorRow[3] = platform;
+        results.push(errorRow);
       }
 
       progressBar.update(i + 1); 
