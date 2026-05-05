@@ -1,0 +1,35 @@
+name: Fetch DEX Token Details
+
+on:
+  # รันอัตโนมัติทุก 2 ชั่วโมง
+  schedule:
+    - cron: '0 */2 * * *'
+  # รัน Manual ได้จากหน้า Actions
+  workflow_dispatch:
+
+jobs:
+  fetch-tokens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install dependencies
+        run: npm install
+
+      - name: 🔑 Create credentials.json from Secret
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+
+      - name: 🚀 Run script
+        env:
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: node index.js
