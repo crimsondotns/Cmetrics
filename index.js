@@ -41,28 +41,68 @@ function formatThaiDateTime(timestamp) {
  * สร้าง Google Auth client รองรับทั้ง keyFile (local) และ credentials JSON string (CI/CD)
  */
 async function createAuthClient() {
-  // กรณี GitHub Actions: ใช้ GOOGLE_CREDENTIALS_JSON (JSON string)
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+  // กรณี Local: ใช้ keyFile (ให้ความสำคัญกว่า env var เพราะเชื่อถือได้กว่า)
+  if (fs.existsSync(KEY_FILE)) {
+    console.log(`🔑 ใช้ credentials จากไฟล์: ${KEY_FILE}`);
     const auth = new google.auth.GoogleAuth({
-      credentials,
+      keyFile: KEY_FILE,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
     return auth.getClient();
   }
 
-  // กรณี Local: ใช้ keyFile
-  if (!fs.existsSync(KEY_FILE)) {
-    console.error(`❌ ไม่พบไฟล์ credentials: ${KEY_FILE}`);
-    console.error('   กรุณาวางไฟล์ credentials.json ใน root ของโปรเจกต์');
-    process.exit(1);
+  // กรณี GitHub Actions / CI: ใช้ GOOGLE_CREDENTIALS_JSON (JSON string)
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    const raw = process.env.GOOGLE_CREDENTIALS_JSON.trim();
+
+    // ตรวจสอบเบื้องต้นว่าเป็น JSON หรือไม่
+    if (!raw.startsWith('{')) {
+      console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่ใช่ JSON ที่ถูกต้อง!');
+      console.error(`   ค่าที่ได้รับขึ้นต้นด้วย: "${raw.substring(0, 50)}..."`);
+      console.error('');
+      console.error('💡 วิธีแก้:');
+      console.error('   1. เปิดไฟล์ credentials.json');
+      console.error('   2. Copy เนื้อหา JSON ทั้งหมด (ต้องขึ้นต้นด้วย { และจบด้วย })');
+      console.error('   3. วางลงใน GitHub Secrets → GOOGLE_CREDENTIALS_JSON');
+      process.exit(1);
+    }
+
+    try {
+      const credentials = JSON.parse(raw);
+
+      // ตรวจสอบว่ามี field สำคัญของ Service Account
+      if (!credentials.client_email || !credentials.private_key) {
+        console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่มี field ที่จำเป็น (client_email, private_key)');
+        console.error('   กรุณาตรวจสอบว่า copy JSON จากไฟล์ Service Account ที่ถูกต้อง');
+        process.exit(1);
+      }
+
+      console.log(`🔑 ใช้ credentials จาก env: ${credentials.client_email}`);
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+      return auth.getClient();
+
+    } catch (parseError) {
+      console.error('❌ GOOGLE_CREDENTIALS_JSON ไม่สามารถ parse เป็น JSON ได้!');
+      console.error(`   Error: ${parseError.message}`);
+      console.error(`   ค่าที่ได้รับขึ้นต้นด้วย: "${raw.substring(0, 80)}..."`);
+      console.error('');
+      console.error('💡 วิธีแก้:');
+      console.error('   • ตรวจสอบว่า copy JSON มาครบทั้งก้อน ไม่มีข้อความอื่นปนมา');
+      console.error('   • JSON ต้องขึ้นต้นด้วย { และจบด้วย }');
+      console.error('   • ลองรัน: cat credentials.json | pbcopy (Mac) เพื่อ copy ให้ถูกต้อง');
+      process.exit(1);
+    }
   }
 
-  const auth = new google.auth.GoogleAuth({
-    keyFile: KEY_FILE,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  return auth.getClient();
+  // ไม่พบ credentials ทั้งสองแบบ
+  console.error(`❌ ไม่พบ credentials!`);
+  console.error(`   ต้องมีอย่างใดอย่างหนึ่ง:`);
+  console.error(`   • ไฟล์ ${KEY_FILE} (สำหรับรัน local)`);
+  console.error(`   • Environment Variable: GOOGLE_CREDENTIALS_JSON (สำหรับ CI/CD)`);
+  process.exit(1);
 }
 
 // ================= กำหนด Header ให้ครอบคลุมทุก Timeframe =================
