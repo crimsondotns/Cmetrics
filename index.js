@@ -59,7 +59,7 @@ async function createAuthClient() {
   return auth.getClient();
 }
 
-// ================= กำหนด Header ให้ครอบคลุมทุก Timeframe =================
+// ================= กำหนด Header ให้ครอบคลุมทุก Timeframe (ตัด 7d, 30d ออก) =================
 const HEADERS = [
   // ข้อมูลหลัก
   "n", "sym", "addr", "plt", "pdex", "pcid", "pid", "dec", "crt", "own", 
@@ -76,10 +76,6 @@ const HEADERS = [
   "sts_4h_vu", "sts_4h_txs", "sts_4h_nb", "sts_4h_ns", "sts_4h_bvu", "sts_4h_svu", "sts_4h_but", "sts_4h_sut", "sts_4h_pc", "sts_4h_ut",
   // sts (Stats) - 24 ชั่วโมง
   "sts_24h_vu", "sts_24h_txs", "sts_24h_nb", "sts_24h_ns", "sts_24h_bvu", "sts_24h_svu", "sts_24h_but", "sts_24h_sut", "sts_24h_pc", "sts_24h_ut",
-  // sts (Stats) - 7 วัน
-  "sts_7d_vu", "sts_7d_txs", "sts_7d_nb", "sts_7d_ns", "sts_7d_bvu", "sts_7d_svu", "sts_7d_but", "sts_7d_sut", "sts_7d_pc", "sts_7d_ut",
-  // sts (Stats) - 30 วัน
-  "sts_30d_vu", "sts_30d_txs", "sts_30d_nb", "sts_30d_ns", "sts_30d_bvu", "sts_30d_svu", "sts_30d_but", "sts_30d_sut", "sts_30d_pc", "sts_30d_ut",
   
   // pls (Pools) - ดึงข้อมูล Pool แรก
   "pls_addr", "pls_v24", "pls_pubAt", 
@@ -166,8 +162,6 @@ async function main() {
         const sts_1h  = stsArray.find(s => s.tp === '1h') || {};
         const sts_4h  = stsArray.find(s => s.tp === '4h') || {};
         const sts_24h = stsArray.find(s => s.tp === '24h') || {};
-        const sts_7d  = stsArray.find(s => s.tp === '7d') || {};
-        const sts_30d = stsArray.find(s => s.tp === '30d' || s.tp === '1M') || {};
         
         // === เลือก Pool ที่ตรงกับ pool address จากชีต subscription (คอลัมน์ I) ===
         const plsArray = Array.isArray(d.pls) ? d.pls : [];
@@ -198,10 +192,6 @@ async function main() {
           sts_4h.vu || '', sts_4h.txs || '', sts_4h.nb || '', sts_4h.ns || '', sts_4h.bvu || '', sts_4h.svu || '', sts_4h.but || '', sts_4h.sut || '', sts_4h.pc || 0, sts_4h.ut || '',
           // sts (Stats) - 24h
           sts_24h.vu || '', sts_24h.txs || '', sts_24h.nb || '', sts_24h.ns || '', sts_24h.bvu || '', sts_24h.svu || '', sts_24h.but || '', sts_24h.sut || '', sts_24h.pc || 0, sts_24h.ut || '',
-          // sts (Stats) - 7d
-          sts_7d.vu || '', sts_7d.txs || '', sts_7d.nb || '', sts_7d.ns || '', sts_7d.bvu || '', sts_7d.svu || '', sts_7d.but || '', sts_7d.sut || '', sts_7d.pc || 0, sts_7d.ut || '',
-          // sts (Stats) - 30d
-          sts_30d.vu || '', sts_30d.txs || '', sts_30d.nb || '', sts_30d.ns || '', sts_30d.bvu || '', sts_30d.svu || '', sts_30d.but || '', sts_30d.sut || '', sts_30d.pc || 0, sts_30d.ut || '',
 
           // pls (Pools)
           pls.addr || '', pls.v24 || '', pls.pubAt || '', 
@@ -218,8 +208,6 @@ async function main() {
         ]);
 
       } catch (error) {
-        errorCount++;
-        
         let errorText = 'ERROR';
         let logMsg = '';
         const symbolDisplay = rows[i][1] || 'UNKNOWN';
@@ -227,7 +215,7 @@ async function main() {
 
         if (statusCode === '429') {
           errorText = 'RATE LIMIT';
-          logMsg = `\x1b[1;31m[!] HTTP 429 | ❌ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}\x1b[0m`;
+          logMsg = `\x1b[1;31m[!] HTTP 429 | ❌ ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address} (หยุดรอ 65 วินาทีเพื่อลองใหม่)\x1b[0m`;
         } else if (statusCode === '404') {
           errorText = 'NOT FOUND';
           logMsg = `\x1b[33m[!] HTTP 404 | 🔍 ${errorText.padEnd(11)} | ${symbolDisplay.padEnd(8)} : ${address}\x1b[0m`;
@@ -242,6 +230,16 @@ async function main() {
         }
         console.log(logMsg);
 
+        // จัดการ Rate Limit: รอ 65 วินาที แล้วลองใหม่ (ไม่ข้ามรายการนี้)
+        if (statusCode === '429') {
+          await delay(65000);
+          i--; // ถอยอินเด็กซ์กลับเพื่อดึงข้อมูลรายการเดิมอีกครั้งในรอบถัดไป
+          continue; 
+        }
+
+        // กรณีเป็น Error อื่น ๆ จะเก็บสถิติว่าพลาดและข้ามไปทำรายการถัดไป
+        errorCount++;
+
         // เขียนลงชีต โดยระบุ Error Code ชัดเจน
         const errorRow = new Array(HEADERS.length).fill('');
         errorRow[0] = `Error HTTP ${statusCode}`;
@@ -251,7 +249,7 @@ async function main() {
       }
 
       progressBar.update(i + 1); 
-      await delay(300); 
+      await delay(1000); // เพิ่ม Default Delay เป็น 1 วิ ลดโอกาสเจอ Rate Limit
     }
 
     progressBar.stop();
@@ -274,7 +272,7 @@ async function main() {
     console.log(`\n✅ อัปเดตข้อมูล ${rows.length} รายการ เสร็จสมบูรณ์!`);
     console.log(`⏱️  ใช้เวลาไปทั้งหมด: ${elapsedTime} วินาที`);
     if (errorCount > 0) {
-      console.log(`⚠️  มีข้อมูลที่ไม่พบหรือ Error: ${errorCount} รายการ (ข้ามไม่เขียนลงชีต)`);
+      console.log(`⚠️  มีข้อมูลที่ไม่พบหรือ Error ทั่วไป: ${errorCount} รายการ (ไม่รวม 429)`);
     }
 
   } catch (err) {
