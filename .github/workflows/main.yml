@@ -8,7 +8,7 @@ on:
 jobs:
   fetch-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
       - name: 📥 Checkout repository
@@ -17,13 +17,14 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: 📦 Install dependencies
         run: npm install
 
       - name: 🚀 Run script
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
